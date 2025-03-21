@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'organizations',  # Add this
     'roles',         # Add this
     'onboarding',
+    'tasks'
 ]
 
 MIDDLEWARE = [

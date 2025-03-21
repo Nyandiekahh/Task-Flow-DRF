@@ -11,6 +11,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from organizations.views import TitleViewSet
+from tasks.views import TaskViewSet, CommentViewSet, TaskAttachmentViewSet, TaskHistoryViewSet  # Add these imports
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -30,6 +31,11 @@ router.register(r'roles', RoleViewSet, basename='role')
 router.register(r'permissions', PermissionViewSet, basename='permission')
 router.register(r'titles', TitleViewSet, basename='titles')
 
+# Add task management routes
+router.register(r'tasks', TaskViewSet, basename='task')
+router.register(r'comments', CommentViewSet, basename='comment')
+router.register(r'attachments', TaskAttachmentViewSet, basename='attachment')
+router.register(r'history', TaskHistoryViewSet, basename='history')
 
 urlpatterns = [
     # API root
