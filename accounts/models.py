@@ -48,11 +48,22 @@ class CustomUser(AbstractUser):
     email = models.EmailField(_('email address'), unique=True)
     name = models.CharField(_('full name'), max_length=150, blank=True)
     
+    # Organization relationship
+    organization = models.ForeignKey(
+        'organizations.Organization',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='members'
+    )
+    
+    # Keep organization_name for backward compatibility
+    organization_name = models.CharField(max_length=255, blank=True, null=True)
+    
     # Add fields to track onboarding progress
     onboarding_completed = models.BooleanField(default=False)
     
-    # Fields for organization and role
-    organization_name = models.CharField(max_length=255, blank=True, null=True)
+    # Fields for title
     title = models.CharField(max_length=100, blank=True, null=True)
     
     # Use email as the unique identifier for authentication
