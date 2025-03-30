@@ -1,5 +1,3 @@
-# accounts/views.py
-
 from rest_framework import status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -18,6 +16,7 @@ from .serializers import (
     PasswordResetRequestSerializer,
     PasswordResetConfirmSerializer
 )
+from .models import PasswordResetOTP
 
 User = get_user_model()
 
@@ -62,7 +61,7 @@ class UserView(APIView):
 
 
 class PasswordResetRequestView(APIView):
-    """Request a password reset email"""
+    """Request a password reset via OTP"""
     permission_classes = (permissions.AllowAny,)
 
     def post(self, request):
@@ -76,25 +75,23 @@ class PasswordResetRequestView(APIView):
             except User.DoesNotExist:
                 # We don't want to reveal that the user doesn't exist
                 return Response({
-                    'message': 'Password reset link has been sent if the email exists.'
+                    'message': 'Password reset OTP has been sent if the email exists.'
                 }, status=status.HTTP_200_OK)
             
-            # Generate token
-            token = default_token_generator.make_token(user)
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            # Generate OTP
+            otp_obj = PasswordResetOTP.create_otp_for_user(user)
             
-            # Generate reset link (this would be a frontend URL)
-            reset_url = f"http://localhost:3000/reset-password-confirm/{uid}/{token}/"
-            
-            # Send email with reset link
-            subject = "Password Reset for TaskFlow"
+            # Send email with OTP
+            subject = "Password Reset OTP for TaskFlow"
             message = f"""
-            Hello {user.name},
+            Hello {user.name or user.email},
             
             You've requested a password reset for your TaskFlow account.
-            Please click the following link to reset your password:
+            Please use the following OTP to reset your password:
             
-            {reset_url}
+            {otp_obj.otp}
+            
+            This OTP is valid for 15 minutes.
             
             If you didn't request this, you can safely ignore this email.
             
@@ -102,28 +99,73 @@ class PasswordResetRequestView(APIView):
             The TaskFlow Team
             """
             
-            # In a real application, you would actually send this email
-            # For development, we'll just print the reset URL
-            print(f"Password reset link for {email}: {reset_url}")
-            
-            # Uncomment to actually send emails in production
-            # send_mail(
-            #     subject,
-            #     message,
-            #     settings.DEFAULT_FROM_EMAIL,
-            #     [email],
-            #     fail_silently=False,
-            # )
+            # Send the email
+            send_mail(
+                subject,
+                message,
+                settings.EMAIL_HOST_USER,
+                [email],
+                fail_silently=False,
+            )
             
             return Response({
-                'message': 'Password reset link has been sent if the email exists.'
+                'message': 'Password reset OTP has been sent if the email exists.'
             }, status=status.HTTP_200_OK)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+class PasswordResetVerifyView(APIView):
+    """Verify OTP and reset password"""
+    permission_classes = (permissions.AllowAny,)
+
+    def post(self, request):
+        email = request.data.get('email')
+        otp = request.data.get('otp')
+        new_password = request.data.get('new_password')
+        
+        # Validate input data
+        if not all([email, otp, new_password]):
+            return Response({
+                'error': 'Email, OTP and new password are required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            user = User.objects.get(email=email)
+            
+            # Find the latest unused OTP for this user
+            otp_obj = PasswordResetOTP.objects.filter(
+                user=user, 
+                otp=otp, 
+                is_used=False
+            ).order_by('-created_at').first()
+            
+            if not otp_obj or not otp_obj.is_valid():
+                return Response({
+                    'error': 'Invalid or expired OTP'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Mark OTP as used
+            otp_obj.is_used = True
+            otp_obj.save()
+            
+            # Reset the password
+            user.set_password(new_password)
+            user.save()
+            
+            return Response({
+                'message': 'Password has been reset successfully'
+            }, status=status.HTTP_200_OK)
+            
+        except User.DoesNotExist:
+            return Response({
+                'error': 'Invalid email'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+
+# Keep this for backward compatibility
 class PasswordResetConfirmView(APIView):
-    """Confirm a password reset using a token"""
+    """Legacy confirm password reset using a token - to be deprecated"""
     permission_classes = (permissions.AllowAny,)
 
     def post(self, request, uidb64, token):

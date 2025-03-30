@@ -194,3 +194,23 @@ SIMPLE_JWT = {
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+
+# Add these settings to the end of your taskflow_backend/settings.py file
+
+# Email Configuration
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'  # Or your preferred SMTP server
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'einsteinmokua100@gmail.com'  # Replace with your email
+EMAIL_HOST_PASSWORD = 'qnkc gpqz cddn ichi'  # Replace with your app password
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+
+# For development, you can use the console backend to see emails in the console
+# EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+# For production, you should use environment variables:
+# import os
+# EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
+# EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')

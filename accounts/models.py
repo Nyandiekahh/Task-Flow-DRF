@@ -1,8 +1,9 @@
-# accounts/models.py
-
 from django.db import models
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.utils.translation import gettext_lazy as _
+from django.utils import timezone
+import random
+import string
 
 
 class CustomUserManager(BaseUserManager):
@@ -75,3 +76,34 @@ class CustomUser(AbstractUser):
 
     def __str__(self):
         return self.email
+
+
+class PasswordResetOTP(models.Model):
+    """Model to store OTPs for password reset"""
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    otp = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_used = models.BooleanField(default=False)
+    
+    @classmethod
+    def generate_otp(cls):
+        """Generate a 6-digit OTP"""
+        return ''.join(random.choices(string.digits, k=6))
+    
+    @classmethod
+    def create_otp_for_user(cls, user):
+        """Create a new OTP for the user"""
+        # Invalidate any existing OTPs
+        cls.objects.filter(user=user, is_used=False).update(is_used=True)
+        
+        # Create new OTP
+        otp = cls.generate_otp()
+        otp_obj = cls.objects.create(user=user, otp=otp)
+        return otp_obj
+    
+    def is_valid(self):
+        """Check if OTP is still valid (not expired and not used)"""
+        # OTP expires after 15 minutes
+        expiry_time = timezone.timedelta(minutes=15)
+        return (not self.is_used and 
+                timezone.now() < self.created_at + expiry_time)
