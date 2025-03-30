@@ -12,6 +12,8 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from organizations.views import TitleViewSet
 from tasks.views import TaskViewSet, CommentViewSet, TaskAttachmentViewSet, TaskHistoryViewSet  # Add these imports
+from projects.views import ProjectViewSet
+
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -30,6 +32,9 @@ router.register(r'team-members', TeamMemberViewSet, basename='team-member')
 router.register(r'roles', RoleViewSet, basename='role')
 router.register(r'permissions', PermissionViewSet, basename='permission')
 router.register(r'titles', TitleViewSet, basename='titles')
+router.register(r'projects', ProjectViewSet, basename='project')
+
+
 
 # Add task management routes
 router.register(r'tasks', TaskViewSet, basename='task')

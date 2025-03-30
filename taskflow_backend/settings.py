@@ -49,7 +49,9 @@ INSTALLED_APPS = [
     'organizations',  # Add this
     'roles',         # Add this
     'onboarding',
-    'tasks'
+    'tasks',
+    'projects',
+    'calendar_events',  # Add this
 ]
 
 MIDDLEWARE = [
