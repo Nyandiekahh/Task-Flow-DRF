@@ -1,5 +1,9 @@
 from rest_framework import serializers
-from .models import Task, TaskAttachment, Comment, TaskHistory
+from .models import (
+    Task, TaskAttachment, Comment, TaskHistory,
+    TaskAssignee, TaskApprover, TaskWatcher,
+    TaskPrerequisite, TaskLink
+)
 from organizations.models import TeamMember
 
 
@@ -40,18 +44,27 @@ class TaskHistorySerializer(serializers.ModelSerializer):
         return obj.actor.get_full_name() or obj.actor.username
 
 
+class TeamMemberSerializer(serializers.ModelSerializer):
+    """Serializer for team members"""
+    
+    class Meta:
+        model = TeamMember
+        fields = ['id', 'name', 'email']
+
+
 class TaskListSerializer(serializers.ModelSerializer):
     """Simplified serializer for task listings"""
     
     assigned_to_name = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
+    tags_list = serializers.SerializerMethodField()
     
     class Meta:
         model = Task
         fields = [
-            'id', 'title', 'status', 'priority', 'due_date',
+            'id', 'title', 'status', 'priority', 'category', 'due_date',
             'assigned_to', 'assigned_to_name', 'created_by',
-            'created_by_name', 'created_at', 'updated_at'
+            'created_by_name', 'created_at', 'updated_at', 'tags_list'
         ]
     
     def get_assigned_to_name(self, obj):
@@ -61,10 +74,13 @@ class TaskListSerializer(serializers.ModelSerializer):
     
     def get_created_by_name(self, obj):
         return obj.created_by.get_full_name() or obj.created_by.username
+    
+    def get_tags_list(self, obj):
+        return obj.get_tags_list()
 
 
 class TaskDetailSerializer(serializers.ModelSerializer):
-    """Detailed serializer for task details"""
+    """Detailed serializer for task details with all enhanced fields"""
     
     comments = CommentSerializer(many=True, read_only=True)
     attachments = TaskAttachmentSerializer(many=True, read_only=True)
@@ -75,12 +91,32 @@ class TaskDetailSerializer(serializers.ModelSerializer):
     rejected_by_name = serializers.SerializerMethodField()
     delegated_by_name = serializers.SerializerMethodField()
     
+    # Add project name if available
+    project_name = serializers.SerializerMethodField()
+    
+    # Tags as list
+    tags_list = serializers.SerializerMethodField()
+    
+    # Additional fields for many-to-many relationships
+    assignees = serializers.SerializerMethodField()
+    approvers = serializers.SerializerMethodField()
+    watchers = serializers.SerializerMethodField()
+    prerequisites = serializers.SerializerMethodField()
+    linked_tasks = serializers.SerializerMethodField()
+    
     class Meta:
         model = Task
         fields = [
-            'id', 'title', 'description', 'status', 'priority', 'due_date',
-            'organization', 'created_by', 'created_by_name',
+            'id', 'title', 'description', 'status', 'priority', 'category',
+            'start_date', 'due_date', 'estimated_hours',
+            'is_recurring', 'recurring_frequency', 'recurring_ends_on',
+            'organization', 'project', 'project_name', 'visibility',
+            'tags', 'tags_list', 'acceptance_criteria', 'notes',
+            'time_tracking_enabled', 'budget_hours', 'is_billable', 'client_reference',
+            'created_by', 'created_by_name',
             'assigned_to', 'assigned_to_name',
+            'assignees', 'approvers', 'watchers',
+            'prerequisites', 'linked_tasks',
             'created_at', 'updated_at', 'completed_at',
             'approved_by', 'approved_by_name',
             'rejected_by', 'rejected_by_name', 'rejection_reason',
@@ -116,6 +152,75 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             return obj.delegated_by.get_full_name() or obj.delegated_by.username
         return None
     
+    def get_project_name(self, obj):
+        if obj.project:
+            return obj.project.name
+        return None
+    
+    def get_tags_list(self, obj):
+        return obj.get_tags_list()
+    
+    def get_assignees(self, obj):
+        assignees = []
+        for assignment in TaskAssignee.objects.filter(task=obj):
+            assignees.append({
+                'id': assignment.team_member.id,
+                'name': assignment.team_member.name,
+                'email': assignment.team_member.email
+            })
+        return assignees
+    
+    def get_approvers(self, obj):
+        approvers = []
+        for approval in TaskApprover.objects.filter(task=obj):
+            approvers.append({
+                'id': approval.team_member.id,
+                'name': approval.team_member.name,
+                'email': approval.team_member.email
+            })
+        return approvers
+    
+    def get_watchers(self, obj):
+        watchers = []
+        for watcher in TaskWatcher.objects.filter(task=obj):
+            watchers.append({
+                'id': watcher.team_member.id,
+                'name': watcher.team_member.name,
+                'email': watcher.team_member.email
+            })
+        return watchers
+    
+    def get_prerequisites(self, obj):
+        prerequisites = []
+        for prereq in TaskPrerequisite.objects.filter(task=obj):
+            prerequisites.append({
+                'id': prereq.prerequisite_task.id,
+                'title': prereq.prerequisite_task.title,
+                'status': prereq.prerequisite_task.status
+            })
+        return prerequisites
+    
+    def get_linked_tasks(self, obj):
+        linked_tasks = []
+        
+        # Get tasks linked as task1
+        for link in TaskLink.objects.filter(task1=obj):
+            linked_tasks.append({
+                'id': link.task2.id,
+                'title': link.task2.title,
+                'status': link.task2.status
+            })
+        
+        # Get tasks linked as task2
+        for link in TaskLink.objects.filter(task2=obj):
+            linked_tasks.append({
+                'id': link.task1.id,
+                'title': link.task1.title,
+                'status': link.task1.status
+            })
+        
+        return linked_tasks
+    
     def validate_assigned_to(self, value):
         """Ensure the assigned team member belongs to the task's organization"""
         if value and value.organization != self.instance.organization:
@@ -124,22 +229,96 @@ class TaskDetailSerializer(serializers.ModelSerializer):
 
 
 class TaskCreateSerializer(serializers.ModelSerializer):
-    """Serializer for creating tasks"""
+    """Serializer for creating tasks with all enhanced fields"""
+    
+    tags_list = serializers.ListField(
+        child=serializers.CharField(max_length=50),
+        required=False,
+        write_only=True
+    )
     
     class Meta:
         model = Task
         fields = [
-            'title', 'description', 'priority', 'due_date',
-            'assigned_to'
+            'title', 'description', 'priority', 'category',
+            'start_date', 'due_date', 'estimated_hours',
+            'assigned_to', 'project', 'tags', 'tags_list',
+            'is_recurring', 'recurring_frequency', 'recurring_ends_on',
+            'acceptance_criteria', 'notes', 'visibility',
+            'time_tracking_enabled', 'budget_hours', 'is_billable', 'client_reference'
         ]
     
     def create(self, validated_data):
+        # Extract tags_list if it exists
+        tags_list = validated_data.pop('tags_list', None)
+        
+        # Get many-to-many fields from initial data
+        assignees_data = self.initial_data.get('assignees[]', [])
+        approvers_data = self.initial_data.get('approvers[]', [])
+        watchers_data = self.initial_data.get('watchers[]', [])
+        prerequisites_data = self.initial_data.get('prerequisites[]', [])
+        linked_tasks_data = self.initial_data.get('linked_tasks[]', [])
+        
+        # Handle custom tags from request data (from form field custom_tags)
+        if 'custom_tags' in self.initial_data:
+            custom_tags = self.initial_data.get('custom_tags', '')
+            if custom_tags:
+                if tags_list is None:
+                    tags_list = []
+                tags_list.extend([tag.strip() for tag in custom_tags.split(',') if tag.strip()])
+        
+        # If tags_list is provided, convert to comma-separated string
+        if tags_list:
+            validated_data['tags'] = ', '.join(tags_list)
+        
         # Set organization and created_by automatically
         user = self.context['request'].user
         validated_data['organization'] = user.owned_organizations.first()  # Assuming user has organization
         validated_data['created_by'] = user
         
+        # Create task
         task = Task.objects.create(**validated_data)
+        
+        # Add assignees
+        for assignee_id in assignees_data:
+            try:
+                team_member = TeamMember.objects.get(id=assignee_id)
+                TaskAssignee.objects.create(task=task, team_member=team_member)
+            except TeamMember.DoesNotExist:
+                pass
+        
+        # Add approvers
+        for approver_id in approvers_data:
+            try:
+                team_member = TeamMember.objects.get(id=approver_id)
+                TaskApprover.objects.create(task=task, team_member=team_member)
+            except TeamMember.DoesNotExist:
+                pass
+        
+        # Add watchers
+        for watcher_id in watchers_data:
+            try:
+                team_member = TeamMember.objects.get(id=watcher_id)
+                TaskWatcher.objects.create(task=task, team_member=team_member)
+            except TeamMember.DoesNotExist:
+                pass
+        
+        # Add prerequisites
+        for prerequisite_id in prerequisites_data:
+            try:
+                prerequisite_task = Task.objects.get(id=prerequisite_id)
+                TaskPrerequisite.objects.create(task=task, prerequisite_task=prerequisite_task)
+            except Task.DoesNotExist:
+                pass
+        
+        # Add linked tasks
+        for linked_task_id in linked_tasks_data:
+            try:
+                linked_task = Task.objects.get(id=linked_task_id)
+                # Create link in one direction only (the get_linked_tasks method will handle bidirectional retrieval)
+                TaskLink.objects.create(task1=task, task2=linked_task)
+            except Task.DoesNotExist:
+                pass
         
         # Create task history entry
         TaskHistory.objects.create(
@@ -159,26 +338,64 @@ class TaskCreateSerializer(serializers.ModelSerializer):
             if value.organization != user_org:
                 raise serializers.ValidationError("Team member must belong to your organization")
         return value
+    
+    def validate(self, data):
+        """Perform cross-field validation"""
+        
+        # Validate recurring task fields
+        if data.get('is_recurring'):
+            if not data.get('recurring_frequency'):
+                raise serializers.ValidationError({"recurring_frequency": "Recurring frequency is required for recurring tasks"})
+        
+        # Validate billable task fields
+        if data.get('is_billable') and data.get('time_tracking_enabled') is False:
+            raise serializers.ValidationError({"is_billable": "Time tracking must be enabled for billable tasks"})
+        
+        # Ensure due date is after start date if both are provided
+        start_date = data.get('start_date')
+        due_date = data.get('due_date')
+        if start_date and due_date and start_date > due_date:
+            raise serializers.ValidationError({"due_date": "Due date must be after start date"})
+        
+        return data
 
 
 class TaskUpdateSerializer(serializers.ModelSerializer):
     """Serializer for updating tasks"""
     
+    tags_list = serializers.ListField(
+        child=serializers.CharField(max_length=50),
+        required=False,
+        write_only=True
+    )
+    
     class Meta:
         model = Task
         fields = [
-            'title', 'description', 'status', 'priority', 
-            'due_date', 'assigned_to'
+            'title', 'description', 'status', 'priority', 'category',
+            'start_date', 'due_date', 'estimated_hours', 'assigned_to',
+            'project', 'tags', 'tags_list', 'is_recurring', 'recurring_frequency', 'recurring_ends_on',
+            'acceptance_criteria', 'notes', 'visibility',
+            'time_tracking_enabled', 'budget_hours', 'is_billable', 'client_reference'
         ]
-    
-    def validate_assigned_to(self, value):
-        """Ensure the assigned team member belongs to the task's organization"""
-        if value and value.organization != self.instance.organization:
-            raise serializers.ValidationError("Team member must belong to the same organization as the task")
-        return value
     
     def update(self, instance, validated_data):
         user = self.context['request'].user
+        
+        # Extract tags_list if it exists
+        tags_list = validated_data.pop('tags_list', None)
+        
+        # Handle custom tags from request data (from form field custom_tags)
+        if 'custom_tags' in self.initial_data:
+            custom_tags = self.initial_data.get('custom_tags', '')
+            if custom_tags:
+                if tags_list is None:
+                    tags_list = []
+                tags_list.extend([tag.strip() for tag in custom_tags.split(',') if tag.strip()])
+        
+        # If tags_list is provided, convert to comma-separated string
+        if tags_list:
+            validated_data['tags'] = ', '.join(tags_list)
         
         # Check if status is being changed
         old_status = instance.status
@@ -196,8 +413,91 @@ class TaskUpdateSerializer(serializers.ModelSerializer):
                 else:
                     changes.append(f"{field.replace('_', ' ').title()} changed from '{old_value}' to '{value}'")
         
+        # Get many-to-many data to update
+        assignees_data = self.initial_data.get('assignees[]', None)
+        approvers_data = self.initial_data.get('approvers[]', None)
+        watchers_data = self.initial_data.get('watchers[]', None)
+        prerequisites_data = self.initial_data.get('prerequisites[]', None)
+        linked_tasks_data = self.initial_data.get('linked_tasks[]', None)
+        
         # Update the task
         task = super().update(instance, validated_data)
+        
+        # Update assignees if provided
+        if assignees_data is not None:
+            # Clear existing assignees
+            TaskAssignee.objects.filter(task=task).delete()
+            
+            # Add new assignees
+            for assignee_id in assignees_data:
+                try:
+                    team_member = TeamMember.objects.get(id=assignee_id)
+                    TaskAssignee.objects.create(task=task, team_member=team_member)
+                except TeamMember.DoesNotExist:
+                    pass
+            
+            changes.append("Additional assignees updated")
+        
+        # Update approvers if provided
+        if approvers_data is not None:
+            # Clear existing approvers
+            TaskApprover.objects.filter(task=task).delete()
+            
+            # Add new approvers
+            for approver_id in approvers_data:
+                try:
+                    team_member = TeamMember.objects.get(id=approver_id)
+                    TaskApprover.objects.create(task=task, team_member=team_member)
+                except TeamMember.DoesNotExist:
+                    pass
+            
+            changes.append("Approvers updated")
+        
+        # Update watchers if provided
+        if watchers_data is not None:
+            # Clear existing watchers
+            TaskWatcher.objects.filter(task=task).delete()
+            
+            # Add new watchers
+            for watcher_id in watchers_data:
+                try:
+                    team_member = TeamMember.objects.get(id=watcher_id)
+                    TaskWatcher.objects.create(task=task, team_member=team_member)
+                except TeamMember.DoesNotExist:
+                    pass
+            
+            changes.append("Watchers updated")
+        
+        # Update prerequisites if provided
+        if prerequisites_data is not None:
+            # Clear existing prerequisites
+            TaskPrerequisite.objects.filter(task=task).delete()
+            
+            # Add new prerequisites
+            for prerequisite_id in prerequisites_data:
+                try:
+                    prerequisite_task = Task.objects.get(id=prerequisite_id)
+                    TaskPrerequisite.objects.create(task=task, prerequisite_task=prerequisite_task)
+                except Task.DoesNotExist:
+                    pass
+            
+            changes.append("Prerequisites updated")
+        
+        # Update linked tasks if provided
+        if linked_tasks_data is not None:
+            # Clear existing linked tasks
+            TaskLink.objects.filter(task1=task).delete()
+            TaskLink.objects.filter(task2=task).delete()
+            
+            # Add new linked tasks
+            for linked_task_id in linked_tasks_data:
+                try:
+                    linked_task = Task.objects.get(id=linked_task_id)
+                    TaskLink.objects.create(task1=task, task2=linked_task)
+                except Task.DoesNotExist:
+                    pass
+            
+            changes.append("Linked tasks updated")
         
         # Create history entries for changes
         if changes:
@@ -227,6 +527,34 @@ class TaskUpdateSerializer(serializers.ModelSerializer):
             )
         
         return task
+    
+    def validate_assigned_to(self, value):
+        """Ensure the assigned team member belongs to the task's organization"""
+        if value and value.organization != self.instance.organization:
+            raise serializers.ValidationError("Team member must belong to the same organization as the task")
+        return value
+    
+    def validate(self, data):
+        """Perform cross-field validation"""
+        
+        # Validate recurring task fields
+        if data.get('is_recurring', self.instance.is_recurring):
+            if not data.get('recurring_frequency', self.instance.recurring_frequency):
+                raise serializers.ValidationError({"recurring_frequency": "Recurring frequency is required for recurring tasks"})
+        
+        # Validate billable task fields
+        is_billable = data.get('is_billable', self.instance.is_billable)
+        time_tracking_enabled = data.get('time_tracking_enabled', self.instance.time_tracking_enabled)
+        if is_billable and not time_tracking_enabled:
+            raise serializers.ValidationError({"is_billable": "Time tracking must be enabled for billable tasks"})
+        
+        # Ensure due date is after start date if both are provided
+        start_date = data.get('start_date', self.instance.start_date)
+        due_date = data.get('due_date', self.instance.due_date)
+        if start_date and due_date and start_date > due_date:
+            raise serializers.ValidationError({"due_date": "Due date must be after start date"})
+        
+        return data
 
 
 class TaskApproveSerializer(serializers.ModelSerializer):
