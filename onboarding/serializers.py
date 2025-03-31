@@ -1,6 +1,3 @@
-# Create a new app for onboarding
-# python manage.py startapp onboarding
-
 # onboarding/serializers.py
 
 from rest_framework import serializers
@@ -63,3 +60,36 @@ class CompleteOnboardingSerializer(serializers.Serializer):
         user.onboarding_completed = True
         user.save()
         return user
+
+
+class OrganizationSetupSerializer(serializers.Serializer):
+    """Serializer for setting up a new organization"""
+    name = serializers.CharField(max_length=255, required=True)
+    industry = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    size = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    
+    def validate_name(self, value):
+        """Validate that organization name is unique"""
+        if Organization.objects.filter(name=value).exists():
+            raise serializers.ValidationError(
+                "An organization with this name already exists."
+            )
+        return value
+    
+    def create(self, validated_data):
+        """Create a new organization"""
+        user = self.context['request'].user
+        
+        # Create the organization
+        organization = Organization.objects.create(
+            name=validated_data.get('name'),
+            industry=validated_data.get('industry', ''),
+            size=validated_data.get('size', ''),
+            owner=user
+        )
+        
+        # Associate user with the organization
+        user.organization = organization
+        user.save()
+        
+        return organization

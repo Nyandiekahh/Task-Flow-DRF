@@ -1,3 +1,5 @@
+# accounts/views.py
+
 from rest_framework import status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -30,6 +32,12 @@ class RegisterView(APIView):
         if serializer.is_valid():
             user = serializer.save()
             
+            # If user provided an organization_name, set them as an Admin
+            if user.organization_name and not user.title:
+                user.title = "Admin"
+                user.onboarding_completed = False  # Ensure they go through onboarding
+                user.save()
+            
             # Generate JWT tokens for the new user
             refresh = RefreshToken.for_user(user)
             
@@ -38,6 +46,7 @@ class RegisterView(APIView):
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
                 'message': 'User registered successfully',
+                'needs_onboarding': not user.onboarding_completed
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

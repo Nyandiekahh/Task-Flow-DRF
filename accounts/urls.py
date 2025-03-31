@@ -1,3 +1,5 @@
+# accounts/urls.py
+
 from django.urls import path
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -9,6 +11,15 @@ from .views import (
     PasswordResetRequestView,
     PasswordResetConfirmView,
     PasswordResetVerifyView
+)
+
+# Import invitation views from the separate file
+from .invitation_views import (
+    InvitationListView,
+    InvitationCreateView,
+    InvitationAcceptView,
+    InvitationResendView,
+    InvitationDeleteView
 )
 
 urlpatterns = [
@@ -27,4 +38,11 @@ urlpatterns = [
     # Keep the old URL for backward compatibility
     path('password-reset-confirm/<str:uidb64>/<str:token>/', 
          PasswordResetConfirmView.as_view(), name='password-reset-confirm'),
+         
+    # Team invitation endpoints
+    path('invite/', InvitationCreateView.as_view(), name='invitation-create'),
+    path('invitations/', InvitationListView.as_view(), name='invitation-list'),
+    path('invitation/<uuid:token>/', InvitationAcceptView.as_view(), name='invitation-accept'),
+    path('invitation/<int:invitation_id>/resend/', InvitationResendView.as_view(), name='invitation-resend'),
+    path('invitation/<int:invitation_id>/delete/', InvitationDeleteView.as_view(), name='invitation-delete'),
 ]

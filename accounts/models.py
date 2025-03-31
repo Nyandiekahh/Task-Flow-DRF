@@ -1,9 +1,12 @@
+# accounts/models.py
+
 from django.db import models
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 import random
 import string
+import uuid
 
 
 class CustomUserManager(BaseUserManager):
@@ -107,3 +110,63 @@ class PasswordResetOTP(models.Model):
         expiry_time = timezone.timedelta(minutes=15)
         return (not self.is_used and 
                 timezone.now() < self.created_at + expiry_time)
+
+
+class Invitation(models.Model):
+    """Model to store team member invitations"""
+    # Unique token for the invitation
+    token = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    
+    # Who is being invited
+    email = models.EmailField()
+    name = models.CharField(max_length=150, blank=True)
+    
+    # Who sent the invitation
+    invited_by = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='sent_invitations'
+    )
+    
+    # Organization and role for the invited user
+    organization = models.ForeignKey(
+        'organizations.Organization',
+        on_delete=models.CASCADE,
+        related_name='invitations'
+    )
+    role = models.ForeignKey(
+        'roles.Role',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='invitations'
+    )
+    
+    # Status tracking
+    accepted = models.BooleanField(default=False)
+    date_sent = models.DateTimeField(auto_now_add=True)
+    date_accepted = models.DateTimeField(null=True, blank=True)
+    
+    # Email sending status
+    email_sent = models.BooleanField(default=False)
+    
+    def __str__(self):
+        return f"Invitation to {self.email} for {self.organization.name}"
+    
+    def accept(self, user=None):
+        """Mark invitation as accepted and associate with user if provided"""
+        self.accepted = True
+        self.date_accepted = timezone.now()
+        
+        if user:
+            user.organization = self.organization
+            if self.role:
+                # Assuming the role name is stored in user.title
+                user.title = self.role.name
+            user.save()
+            
+        self.save()
+    
+    class Meta:
+        unique_together = ('email', 'organization')
+        ordering = ['-date_sent']
