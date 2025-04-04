@@ -8,8 +8,11 @@ from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
 from django.conf import settings
 from django.utils import timezone
+from datetime import timedelta
+import random
+import string
 
-from .models import Invitation
+from .models import Invitation, InvitationOTP
 from .serializers import (
     UserSerializer,
     InvitationCreateSerializer,
@@ -51,6 +54,9 @@ class InvitationCreateView(APIView):
             return Response({
                 'error': 'You must be part of an organization to send invitations'
             }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check if using OTP
+        use_otp = request.data.get('use_otp', False)
         
         # Process bulk invitations
         serializer = BulkInvitationSerializer(data=request.data)
@@ -100,8 +106,21 @@ class InvitationCreateView(APIView):
                     
                     created_invitations.append(invitation)
                     
-                    # Send invitation email
-                    self.send_invitation_email(invitation)
+                    # Generate OTP if requested
+                    otp_code = None
+                    if use_otp:
+                        otp_code = self.generate_otp()
+                        # Save OTP in the database
+                        InvitationOTP.objects.create(
+                            invitation=invitation,
+                            code=otp_code,
+                            expires_at=timezone.now() + timedelta(hours=24)  # 24-hour expiry
+                        )
+                        # Send invitation email with OTP
+                        self.send_otp_email(invitation, otp_code)
+                    else:
+                        # Send regular invitation email with link
+                        self.send_invitation_email(invitation)
                 else:
                     # Return validation errors
                     return Response(
@@ -116,6 +135,55 @@ class InvitationCreateView(APIView):
             }, status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def generate_otp(self, length=6):
+        """Generate a random OTP code"""
+        return ''.join(random.choices(string.digits, k=length))
+    
+    def send_otp_email(self, invitation, otp_code):
+        """Send invitation email with OTP code instead of a link"""
+        subject = f"You've been invited to join {invitation.organization.name} on TaskFlow"
+        
+        # Email body with OTP
+        message = f"""
+        Hello {invitation.name or invitation.email},
+        
+        You've been invited by {invitation.invited_by.name or invitation.invited_by.email} to join {invitation.organization.name} on TaskFlow.
+        
+        {f"You've been invited to join as {invitation.role.name}." if invitation.role else ""}
+        
+        Your one-time password (OTP) to complete registration is: {otp_code}
+        
+        To complete your registration:
+        1. Go to the TaskFlow sign-in page
+        2. Enter your email address: {invitation.email}
+        3. Enter the OTP code shown above when prompted
+        4. Complete your account setup
+        
+        This OTP will expire in 24 hours.
+        
+        If you have any questions, please contact {invitation.invited_by.email}.
+        
+        Best regards,
+        The TaskFlow Team
+        """
+        
+        # Send the email
+        try:
+            send_mail(
+                subject,
+                message,
+                settings.EMAIL_HOST_USER,
+                [invitation.email],
+                fail_silently=False,
+            )
+            
+            # Mark email as sent
+            invitation.email_sent = True
+            invitation.save()
+        except Exception as e:
+            # Log the error but don't fail the request
+            print(f"Error sending invitation email: {str(e)}")
     
     def send_invitation_email(self, invitation):
         """Send invitation email to the invitee"""
@@ -255,6 +323,9 @@ class InvitationResendView(APIView):
                 'error': 'You must be part of an organization to resend invitations'
             }, status=status.HTTP_400_BAD_REQUEST)
         
+        # Check if using OTP
+        use_otp = request.data.get('use_otp', True)  # Default to using OTP for resends
+        
         try:
             invitation = Invitation.objects.get(
                 id=invitation_id,
@@ -262,30 +333,68 @@ class InvitationResendView(APIView):
                 accepted=False
             )
             
-            # Create frontend URL for accepting invitation
-            frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
-            invitation_link = f"{frontend_url}/accept-invitation/{invitation.token}"
-            
-            subject = f"You've been invited to join {invitation.organization.name} on TaskFlow"
-            
-            # Email body
-            message = f"""
-            Hello {invitation.name or invitation.email},
-            
-            You've been invited by {invitation.invited_by.name or invitation.invited_by.email} to join {invitation.organization.name} on TaskFlow.
-            
-            {f"You've been invited to join as {invitation.role.name}." if invitation.role else ""}
-            
-            Click the following link to accept the invitation:
-            {invitation_link}
-            
-            This invitation link will expire in 7 days.
-            
-            If you have any questions, please contact {invitation.invited_by.email}.
-            
-            Best regards,
-            The TaskFlow Team
-            """
+            if use_otp:
+                # Generate new OTP
+                otp_code = InvitationOTP.generate_otp()
+                
+                # Save OTP in the database
+                InvitationOTP.objects.create(
+                    invitation=invitation,
+                    code=otp_code,
+                    expires_at=timezone.now() + timedelta(hours=24)
+                )
+                
+                # Send email with OTP
+                subject = f"You've been invited to join {invitation.organization.name} on TaskFlow"
+                
+                # Email body with OTP
+                message = f"""
+                Hello {invitation.name or invitation.email},
+                
+                You've been invited by {invitation.invited_by.name or invitation.invited_by.email} to join {invitation.organization.name} on TaskFlow.
+                
+                {f"You've been invited to join as {invitation.role.name}." if invitation.role else ""}
+                
+                Your one-time password (OTP) to complete registration is: {otp_code}
+                
+                To complete your registration:
+                1. Go to the TaskFlow sign-in page
+                2. Enter your email address: {invitation.email}
+                3. Enter the OTP code shown above when prompted
+                4. Complete your account setup
+                
+                This OTP will expire in 24 hours.
+                
+                If you have any questions, please contact {invitation.invited_by.email}.
+                
+                Best regards,
+                The TaskFlow Team
+                """
+            else:
+                # Create frontend URL for accepting invitation
+                frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
+                invitation_link = f"{frontend_url}/accept-invitation/{invitation.token}"
+                
+                subject = f"You've been invited to join {invitation.organization.name} on TaskFlow"
+                
+                # Email body
+                message = f"""
+                Hello {invitation.name or invitation.email},
+                
+                You've been invited by {invitation.invited_by.name or invitation.invited_by.email} to join {invitation.organization.name} on TaskFlow.
+                
+                {f"You've been invited to join as {invitation.role.name}." if invitation.role else ""}
+                
+                Click the following link to accept the invitation:
+                {invitation_link}
+                
+                This invitation link will expire in 7 days.
+                
+                If you have any questions, please contact {invitation.invited_by.email}.
+                
+                Best regards,
+                The TaskFlow Team
+                """
             
             # Send the email
             send_mail(
@@ -309,7 +418,6 @@ class InvitationResendView(APIView):
             return Response({
                 'error': 'Invitation not found'
             }, status=status.HTTP_404_NOT_FOUND)
-
 
 class InvitationDeleteView(APIView):
     """View for deleting an invitation"""
@@ -341,3 +449,56 @@ class InvitationDeleteView(APIView):
             return Response({
                 'error': 'Invitation not found'
             }, status=status.HTTP_404_NOT_FOUND)
+
+
+class VerifyOTPView(APIView):
+    """View for verifying OTP codes"""
+    permission_classes = (permissions.AllowAny,)
+    
+    def post(self, request):
+        """Verify OTP code"""
+        email = request.data.get('email')
+        otp_code = request.data.get('otp')
+        
+        if not email or not otp_code:
+            return Response({
+                'error': 'Email and OTP code are required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Find the invitation
+        invitation = Invitation.objects.filter(
+            email=email,
+            accepted=False
+        ).first()
+        
+        if not invitation:
+            return Response({
+                'error': 'No pending invitation found for this email'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Find and verify the OTP
+        otp = InvitationOTP.objects.filter(
+            invitation=invitation,
+            code=otp_code,
+            is_verified=False,
+            expires_at__gt=timezone.now()
+        ).first()
+        
+        if not otp:
+            return Response({
+                'error': 'Invalid or expired OTP code'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Mark OTP as verified
+        otp.is_verified = True
+        otp.save()
+        
+        # Check if user exists
+        user_exists = User.objects.filter(email=email).exists()
+        
+        return Response({
+            'valid': True,
+            'invitation': InvitationListSerializer(invitation).data,
+            'user_exists': user_exists,
+            'token': invitation.token  # Include the token for follow-up API calls
+        }, status=status.HTTP_200_OK)

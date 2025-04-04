@@ -19,7 +19,8 @@ from .invitation_views import (
     InvitationCreateView,
     InvitationAcceptView,
     InvitationResendView,
-    InvitationDeleteView
+    InvitationDeleteView,
+    VerifyOTPView  # Add this import
 )
 
 urlpatterns = [
@@ -45,4 +46,7 @@ urlpatterns = [
     path('invitation/<uuid:token>/', InvitationAcceptView.as_view(), name='invitation-accept'),
     path('invitation/<int:invitation_id>/resend/', InvitationResendView.as_view(), name='invitation-resend'),
     path('invitation/<int:invitation_id>/delete/', InvitationDeleteView.as_view(), name='invitation-delete'),
+    
+    # New OTP verification endpoint
+    path('verify-otp/', VerifyOTPView.as_view(), name='verify-otp'),
 ]

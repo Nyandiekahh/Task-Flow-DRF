@@ -170,3 +170,28 @@ class Invitation(models.Model):
     class Meta:
         unique_together = ('email', 'organization')
         ordering = ['-date_sent']
+
+
+class InvitationOTP(models.Model):
+    """Model to store OTP codes for invitations"""
+    invitation = models.ForeignKey(Invitation, on_delete=models.CASCADE, related_name='otp_codes')
+    code = models.CharField(max_length=10)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    is_verified = models.BooleanField(default=False)
+    
+    class Meta:
+        verbose_name = "Invitation OTP"
+        verbose_name_plural = "Invitation OTPs"
+    
+    def __str__(self):
+        return f"OTP for {self.invitation.email}"
+        
+    def is_valid(self):
+        """Check if OTP is still valid"""
+        return not self.is_verified and self.expires_at > timezone.now()
+        
+    @classmethod
+    def generate_otp(cls, length=6):
+        """Generate a secure random OTP code"""
+        return ''.join(random.choices(string.digits, k=length))
