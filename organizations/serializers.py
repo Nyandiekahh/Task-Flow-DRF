@@ -10,6 +10,15 @@ class OrganizationSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'industry', 'size', 'logo', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
     
+    def validate(self, data):
+        """Additional validation for organization data"""
+        # Ensure required fields are present
+        required_fields = ['name', 'industry', 'size']
+        for field in required_fields:
+            if not data.get(field):
+                raise serializers.ValidationError({field: "This field is required."})
+        return data
+    
     def create(self, validated_data):
         """Create and return a new organization"""
         # Set the owner to the current user
@@ -22,7 +31,6 @@ class OrganizationSerializer(serializers.ModelSerializer):
         user.save()
         
         return organization
-
 
 class TitleSerializer(serializers.ModelSerializer):
     """Serializer for Title model with permissions"""

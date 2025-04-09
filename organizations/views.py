@@ -1,10 +1,14 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.utils import timezone
+from datetime import timedelta
+
 from .models import Organization, TeamMember, Title
 from .serializers import OrganizationSerializer, TeamMemberSerializer, TitleSerializer
 from roles.models import Permission
 from roles.serializers import PermissionSerializer
+from accounts.models import Invitation, CustomUser
 
 class OrganizationViewSet(viewsets.ModelViewSet):
     """Viewset for the Organization model"""
@@ -27,7 +31,29 @@ class TeamMemberViewSet(viewsets.ModelViewSet):
         
         # Try to get organization directly
         if hasattr(user, 'organization') and user.organization:
-            return TeamMember.objects.filter(organization=user.organization)
+            # Include recently accepted invitations
+            recently_accepted_invitations = Invitation.objects.filter(
+                organization=user.organization,
+                accepted=True,
+                date_accepted__gte=timezone.now() - timedelta(days=7)
+            )
+            
+            # Get team members directly
+            team_members = TeamMember.objects.filter(organization=user.organization)
+            
+            # Add any missing members from recently accepted invitations
+            for invitation in recently_accepted_invitations:
+                TeamMember.objects.get_or_create(
+                    organization=invitation.organization,
+                    email=invitation.email,
+                    defaults={
+                        'name': invitation.name,
+                        'user': CustomUser.objects.filter(email=invitation.email).first(),
+                        'title': invitation.role
+                    }
+                )
+            
+            return team_members
         
         # Try to get from owned organizations
         if hasattr(user, 'owned_organizations') and user.owned_organizations.exists():
@@ -49,7 +75,7 @@ class TeamMemberViewSet(viewsets.ModelViewSet):
             return TeamMember.objects.all()
             
         return TeamMember.objects.none()
-    
+
 
 class TitleViewSet(viewsets.ModelViewSet):
     """Viewset for the Title model"""

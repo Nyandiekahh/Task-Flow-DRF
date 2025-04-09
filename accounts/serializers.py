@@ -81,12 +81,10 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         return attrs
 
 
-# Using a string for the queryset to avoid immediate evaluation
 class InvitationCreateSerializer(serializers.Serializer):
     """Serializer for creating team member invitations"""
     email = serializers.EmailField(required=True)
     name = serializers.CharField(required=False, allow_blank=True)
-    # Set read_only=True by default to avoid the queryset assertion error
     role = serializers.PrimaryKeyRelatedField(
         read_only=True,
         required=False,

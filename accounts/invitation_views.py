@@ -1,5 +1,3 @@
-# accounts/invitation_views.py
-
 from rest_framework import status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -19,6 +17,7 @@ from .serializers import (
     InvitationListSerializer,
     BulkInvitationSerializer
 )
+from organizations.models import TeamMember  # Add this import
 
 User = get_user_model()
 
@@ -292,6 +291,24 @@ class InvitationAcceptView(APIView):
                     user.title = invitation.role.name
                     user.save()
             
+            # IMPORTANT: Create or update TeamMember entry
+            team_member, created = TeamMember.objects.get_or_create(
+                organization=invitation.organization,
+                email=invitation.email,
+                defaults={
+                    'name': invitation.name or user.name,
+                    'user': user,
+                    'title': invitation.role
+                }
+            )
+            
+            # If not created, update the existing entry
+            if not created:
+                team_member.user = user
+                team_member.name = invitation.name or user.name
+                team_member.title = invitation.role
+                team_member.save()
+            
             # Mark invitation as accepted
             invitation.accept(user)
             
@@ -412,12 +429,14 @@ class InvitationResendView(APIView):
             
             return Response({
                 'message': 'Invitation resent successfully'
-            }, status=status.HTTP_200_OK)
+            },
+            status=status.HTTP_200_OK)
             
         except Invitation.DoesNotExist:
             return Response({
                 'error': 'Invitation not found'
             }, status=status.HTTP_404_NOT_FOUND)
+
 
 class InvitationDeleteView(APIView):
     """View for deleting an invitation"""
