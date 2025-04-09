@@ -14,12 +14,26 @@ class HasTaskPermission(permissions.BasePermission):
         # Check if user belongs to the object's organization
         if hasattr(obj, 'organization'):
             # For Task objects
-            user_organizations = request.user.owned_organizations.all()
-            return obj.organization in user_organizations
+            try:
+                # Check if user owns this organization
+                if request.user.owned_organizations.filter(id=obj.organization.id).exists():
+                    return True
+                    
+                # Check if user is a member of this organization
+                return request.user.team_memberships.filter(organization=obj.organization).exists()
+            except:
+                return False
         elif hasattr(obj, 'task') and hasattr(obj.task, 'organization'):
             # For Comment, TaskAttachment, TaskHistory objects
-            user_organizations = request.user.owned_organizations.all()
-            return obj.task.organization in user_organizations
+            try:
+                # Check if user owns this organization
+                if request.user.owned_organizations.filter(id=obj.task.organization.id).exists():
+                    return True
+                    
+                # Check if user is a member of this organization
+                return request.user.team_memberships.filter(organization=obj.task.organization).exists()
+            except:
+                return False
         
         return False
 
@@ -37,29 +51,30 @@ class HasPermissionCode(permissions.BasePermission):
             return False
         
         # Get user's organization
-        organization = request.user.owned_organizations.first()
-        if not organization:
-            return False
+        # Check if user is an organization owner first
+        user_owned_org = request.user.owned_organizations.first()
         
-        # Organization owner has all permissions
-        if organization.owner == request.user:
+        # If user is an organization owner, they have all permissions
+        if user_owned_org:
             return True
             
-        # Get user's team membership
+        # Otherwise check team memberships for regular users
         try:
-            team_member = request.user.team_memberships.get(organization=organization)
-        except:
-            return False
-        
-        # Get permission codes for the user's roles
-        from organizations.models import Title
-        from roles.models import Role, Permission
-        
-        try:
-            # Get user's title in the organization
-            title = Title.objects.get(name=team_member.title, organization=organization)
+            # Get user's team membership
+            team_memberships = request.user.team_memberships.all()
+            if not team_memberships.exists():
+                return False
+                
+            # Get the organization from the team membership
+            organization = team_memberships.first().organization
             
-            # Get roles for the title
+            # Get user's title in the organization
+            title = team_memberships.first().title
+            
+            # Check if title has the required permission
+            from roles.models import Role, Permission
+            
+            # Get roles for this organization
             roles = Role.objects.filter(organization=organization)
             
             # Get permissions for those roles
@@ -69,7 +84,8 @@ class HasPermissionCode(permissions.BasePermission):
                 permission_codes.extend([perm.code for perm in permissions])
             
             return self.permission_code in permission_codes
-        except:
+        except Exception as e:
+            print(f"Permission check error: {e}")
             return False
     
     def has_object_permission(self, request, view, obj):
@@ -80,12 +96,26 @@ class HasPermissionCode(permissions.BasePermission):
         # Check if user belongs to the object's organization
         if hasattr(obj, 'organization'):
             # For Task objects
-            user_organizations = request.user.owned_organizations.all()
-            return obj.organization in user_organizations
+            try:
+                # Check if user owns this organization
+                if request.user.owned_organizations.filter(id=obj.organization.id).exists():
+                    return True
+                    
+                # Check if user is a member of this organization
+                return request.user.team_memberships.filter(organization=obj.organization).exists()
+            except:
+                return False
         elif hasattr(obj, 'task') and hasattr(obj.task, 'organization'):
             # For Comment, TaskAttachment, TaskHistory objects
-            user_organizations = request.user.owned_organizations.all()
-            return obj.task.organization in user_organizations
+            try:
+                # Check if user owns this organization
+                if request.user.owned_organizations.filter(id=obj.task.organization.id).exists():
+                    return True
+                    
+                # Check if user is a member of this organization
+                return request.user.team_memberships.filter(organization=obj.task.organization).exists()
+            except:
+                return False
         
         return False
 
@@ -98,6 +128,11 @@ class CanCreateTasks(HasPermissionCode):
 class CanViewTasks(HasPermissionCode):
     """Permission class for viewing tasks"""
     permission_code = 'view_tasks'
+    
+    def has_permission(self, request, view):
+        # For viewing tasks, always allow if authenticated
+        # The filter in get_queryset will handle the access control
+        return request.user.is_authenticated
 
 
 class CanUpdateTasks(HasPermissionCode):

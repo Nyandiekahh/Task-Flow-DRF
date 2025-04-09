@@ -27,7 +27,18 @@ class CommentSerializer(serializers.ModelSerializer):
         read_only_fields = ['author', 'created_at', 'updated_at']
     
     def get_author_name(self, obj):
-        return obj.author.get_full_name() or obj.author.username
+        if hasattr(obj.author, 'get_full_name'):
+            name = obj.author.get_full_name()
+            if name and name.strip():
+                return name
+            
+        if hasattr(obj.author, 'username') and obj.author.username:
+            return obj.author.username
+        
+        if hasattr(obj.author, 'email') and obj.author.email:
+            return obj.author.email.split('@')[0]
+        
+        return "Unknown User"
 
 
 class TaskHistorySerializer(serializers.ModelSerializer):
@@ -41,7 +52,18 @@ class TaskHistorySerializer(serializers.ModelSerializer):
         read_only_fields = ['action', 'actor', 'description', 'timestamp']
     
     def get_actor_name(self, obj):
-        return obj.actor.get_full_name() or obj.actor.username
+        if hasattr(obj.actor, 'get_full_name'):
+            name = obj.actor.get_full_name()
+            if name and name.strip():
+                return name
+            
+        if hasattr(obj.actor, 'username') and obj.actor.username:
+            return obj.actor.username
+        
+        if hasattr(obj.actor, 'email') and obj.actor.email:
+            return obj.actor.email.split('@')[0]
+        
+        return "Unknown User"
 
 
 class TeamMemberSerializer(serializers.ModelSerializer):
@@ -73,7 +95,18 @@ class TaskListSerializer(serializers.ModelSerializer):
         return None
     
     def get_created_by_name(self, obj):
-        return obj.created_by.get_full_name() or obj.created_by.username
+        if hasattr(obj.created_by, 'get_full_name'):
+            name = obj.created_by.get_full_name()
+            if name and name.strip():
+                return name
+            
+        if hasattr(obj.created_by, 'username') and obj.created_by.username:
+            return obj.created_by.username
+        
+        if hasattr(obj.created_by, 'email') and obj.created_by.email:
+            return obj.created_by.email.split('@')[0]
+        
+        return "Unknown User"
     
     def get_tags_list(self, obj):
         return obj.get_tags_list()
@@ -135,21 +168,65 @@ class TaskDetailSerializer(serializers.ModelSerializer):
         return None
     
     def get_created_by_name(self, obj):
-        return obj.created_by.get_full_name() or obj.created_by.username
+        if hasattr(obj.created_by, 'get_full_name'):
+            name = obj.created_by.get_full_name()
+            if name and name.strip():
+                return name
+            
+        if hasattr(obj.created_by, 'username') and obj.created_by.username:
+            return obj.created_by.username
+        
+        if hasattr(obj.created_by, 'email') and obj.created_by.email:
+            return obj.created_by.email.split('@')[0]
+        
+        return "Unknown User"
     
     def get_approved_by_name(self, obj):
         if obj.approved_by:
-            return obj.approved_by.get_full_name() or obj.approved_by.username
+            if hasattr(obj.approved_by, 'get_full_name'):
+                name = obj.approved_by.get_full_name()
+                if name and name.strip():
+                    return name
+                
+            if hasattr(obj.approved_by, 'username') and obj.approved_by.username:
+                return obj.approved_by.username
+            
+            if hasattr(obj.approved_by, 'email') and obj.approved_by.email:
+                return obj.approved_by.email.split('@')[0]
+            
+            return "Unknown User"
         return None
     
     def get_rejected_by_name(self, obj):
         if obj.rejected_by:
-            return obj.rejected_by.get_full_name() or obj.rejected_by.username
+            if hasattr(obj.rejected_by, 'get_full_name'):
+                name = obj.rejected_by.get_full_name()
+                if name and name.strip():
+                    return name
+                
+            if hasattr(obj.rejected_by, 'username') and obj.rejected_by.username:
+                return obj.rejected_by.username
+            
+            if hasattr(obj.rejected_by, 'email') and obj.rejected_by.email:
+                return obj.rejected_by.email.split('@')[0]
+            
+            return "Unknown User"
         return None
         
     def get_delegated_by_name(self, obj):
         if obj.delegated_by:
-            return obj.delegated_by.get_full_name() or obj.delegated_by.username
+            if hasattr(obj.delegated_by, 'get_full_name'):
+                name = obj.delegated_by.get_full_name()
+                if name and name.strip():
+                    return name
+                
+            if hasattr(obj.delegated_by, 'username') and obj.delegated_by.username:
+                return obj.delegated_by.username
+            
+            if hasattr(obj.delegated_by, 'email') and obj.delegated_by.email:
+                return obj.delegated_by.email.split('@')[0]
+            
+            return "Unknown User"
         return None
     
     def get_project_name(self, obj):
@@ -576,12 +653,19 @@ class TaskApproveSerializer(serializers.ModelSerializer):
         instance.approved_by = user
         instance.save()
         
+        # Get user name with the enhanced method
+        user_name = user.get_full_name().strip() if hasattr(user, 'get_full_name') and user.get_full_name() else (
+            user.username if hasattr(user, 'username') and user.username else (
+                user.email.split('@')[0] if hasattr(user, 'email') and user.email else "Unknown User"
+            )
+        )
+        
         # Create history entry
         TaskHistory.objects.create(
             task=instance,
             action='approved',
             actor=user,
-            description=f"Task was approved by {user.get_full_name() or user.username}"
+            description=f"Task was approved by {user_name}"
         )
         
         return instance
@@ -610,12 +694,19 @@ class TaskRejectSerializer(serializers.ModelSerializer):
         instance.rejection_reason = rejection_reason
         instance.save()
         
+        # Get user name with the enhanced method
+        user_name = user.get_full_name().strip() if hasattr(user, 'get_full_name') and user.get_full_name() else (
+            user.username if hasattr(user, 'username') and user.username else (
+                user.email.split('@')[0] if hasattr(user, 'email') and user.email else "Unknown User"
+            )
+        )
+        
         # Create history entry
         TaskHistory.objects.create(
             task=instance,
             action='rejected',
             actor=user,
-            description=f"Task was rejected by {user.get_full_name() or user.username}. Reason: {rejection_reason}"
+            description=f"Task was rejected by {user_name}. Reason: {rejection_reason}"
         )
         
         return instance
@@ -684,7 +775,11 @@ class TaskDelegateSerializer(serializers.ModelSerializer):
         instance.save()
         
         # Get names for history
-        user_name = user.get_full_name() or user.username
+        user_name = user.get_full_name().strip() if hasattr(user, 'get_full_name') and user.get_full_name() else (
+            user.username if hasattr(user, 'username') and user.username else (
+                user.email.split('@')[0] if hasattr(user, 'email') and user.email else "Unknown User"
+            )
+        )
         team_member_name = team_member.name
         
         # Create history entry

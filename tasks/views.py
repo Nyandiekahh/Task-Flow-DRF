@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from django.utils import timezone
 from django.db.models import Q
 
-from .models import Task, Comment, TaskAttachment, TaskHistory
+from .models import Task, Comment, TaskAttachment, TaskHistory, TaskWatcher, TaskAssignee
 from .serializers import (
     TaskListSerializer,
     TaskDetailSerializer,
@@ -41,12 +41,55 @@ class TaskViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """
         Return tasks for the user's organization.
+        For regular team members, only return tasks where they are:
+        1. Assigned to the task (primary assignee)
+        2. Additional assignee (through TaskAssignee)
+        3. Watcher (through TaskWatcher)
+        4. Task creator
+        
         Filter based on query parameters if provided.
         """
         user = self.request.user
-        organization = user.owned_organizations.first()  # Assuming user has organization
         
-        queryset = Task.objects.filter(organization=organization)
+        # Check if user is an organization owner
+        organization = user.owned_organizations.first()
+        is_org_owner = organization is not None
+        
+        # If not an owner, get organization from team membership
+        if not organization:
+            try:
+                team_membership = user.team_memberships.first()
+                if team_membership:
+                    organization = team_membership.organization
+                    # Get the team member object for this user
+                    team_member = team_membership
+                else:
+                    # If user is not associated with any organization, return empty queryset
+                    return Task.objects.none()
+            except Exception as e:
+                print(f"Error getting team membership: {e}")
+                # If there's an error, return empty queryset
+                return Task.objects.none()
+        
+        # Base queryset - all tasks for this organization
+        base_queryset = Task.objects.filter(organization=organization)
+        
+        # For organization owners, get all tasks in the organization
+        if is_org_owner:
+            queryset = base_queryset
+        else:
+            # For regular team members, only show tasks they're involved with
+            # 1. Tasks where they are the primary assignee
+            # 2. Tasks where they are additional assignees (through TaskAssignee)
+            # 3. Tasks where they are watchers (through TaskWatcher)
+            # 4. Tasks they created
+            team_member = user.team_memberships.first()
+            queryset = base_queryset.filter(
+                Q(assigned_to=team_member) |
+                Q(assignees_through__team_member=team_member) |
+                Q(watchers_through__team_member=team_member) |
+                Q(created_by=user)
+            ).distinct()
         
         # Filter by status if specified
         status_param = self.request.query_params.get('status')
@@ -266,6 +309,16 @@ class CommentViewSet(viewsets.ModelViewSet):
         user = self.request.user
         organization = user.owned_organizations.first()
         
+        if not organization:
+            try:
+                team_member = user.team_memberships.first()
+                if team_member:
+                    organization = team_member.organization
+                else:
+                    return Comment.objects.none()
+            except:
+                return Comment.objects.none()
+        
         # Filter by task if specified
         task_id = self.request.query_params.get('task_id')
         if task_id:
@@ -289,6 +342,16 @@ class TaskAttachmentViewSet(viewsets.ModelViewSet):
         user = self.request.user
         organization = user.owned_organizations.first()
         
+        if not organization:
+            try:
+                team_member = user.team_memberships.first()
+                if team_member:
+                    organization = team_member.organization
+                else:
+                    return TaskAttachment.objects.none()
+            except:
+                return TaskAttachment.objects.none()
+        
         # Filter by task if specified
         task_id = self.request.query_params.get('task_id')
         if task_id:
@@ -311,6 +374,16 @@ class TaskHistoryViewSet(viewsets.ReadOnlyModelViewSet):
         """Return history for the user's organization"""
         user = self.request.user
         organization = user.owned_organizations.first()
+        
+        if not organization:
+            try:
+                team_member = user.team_memberships.first()
+                if team_member:
+                    organization = team_member.organization
+                else:
+                    return TaskHistory.objects.none()
+            except:
+                return TaskHistory.objects.none()
         
         # Filter by task if specified
         task_id = self.request.query_params.get('task_id')
