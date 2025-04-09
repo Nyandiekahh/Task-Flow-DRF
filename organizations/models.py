@@ -1,10 +1,5 @@
-# Create a new app for organizations
-# python manage.py startapp organizations
-
-# organizations/models.py
 from django.db import models
 from django.conf import settings
-
 
 class Organization(models.Model):
     """Model for storing organization information"""
@@ -29,9 +24,31 @@ class Organization(models.Model):
         return self.name
 
 
-class TeamMember(models.Model):
-    """Model for storing team member information"""
+class Title(models.Model):
+    """Model for storing team titles/positions"""
     
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name='titles'
+    )
+    # Link permissions directly to titles
+    permissions = models.ManyToManyField(
+        'roles.Permission', 
+        related_name='titles', 
+        blank=True
+    )
+    
+    def __str__(self):
+        return self.name
+    
+    class Meta:
+        unique_together = ('organization', 'name')
+
+
+class TeamMember(models.Model):
     organization = models.ForeignKey(
         Organization,
         on_delete=models.CASCADE,
@@ -40,7 +57,15 @@ class TeamMember(models.Model):
     
     name = models.CharField(max_length=255)
     email = models.EmailField()
-    title = models.CharField(max_length=100)
+    
+    # Update the title field
+    title = models.ForeignKey(
+        'Title',  # Use string reference to avoid circular import
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='team_members'
+    )
     
     # Associated user account (if they've signed up)
     user = models.ForeignKey(
@@ -60,21 +85,3 @@ class TeamMember(models.Model):
     
     class Meta:
         unique_together = ('organization', 'email')
-
-# organizations/models.py
-class Title(models.Model):
-    """Model for storing team titles/positions"""
-    
-    name = models.CharField(max_length=100)
-    description = models.TextField(blank=True)
-    organization = models.ForeignKey(
-        Organization,
-        on_delete=models.CASCADE,
-        related_name='titles'
-    )
-    
-    def __str__(self):
-        return self.name
-    
-    class Meta:
-        unique_together = ('organization', 'name')

@@ -1,9 +1,10 @@
-# organizations/views.py
-
 from rest_framework import viewsets, permissions, status
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import Organization, TeamMember, Title
 from .serializers import OrganizationSerializer, TeamMemberSerializer, TitleSerializer
+from roles.models import Permission
+from roles.serializers import PermissionSerializer
 
 class OrganizationViewSet(viewsets.ModelViewSet):
     """Viewset for the Organization model"""
@@ -103,3 +104,10 @@ class TitleViewSet(viewsets.ModelViewSet):
             serializer.save(organization=organization)
         else:
             raise Exception("Unable to determine user's organization for creating title")
+    
+    @action(detail=False, methods=['GET'])
+    def available_permissions(self, request):
+        """Get all available permissions"""
+        permissions = Permission.objects.all()
+        serializer = PermissionSerializer(permissions, many=True)
+        return Response(serializer.data)
