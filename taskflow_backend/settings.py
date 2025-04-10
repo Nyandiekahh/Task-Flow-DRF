@@ -53,7 +53,9 @@ INSTALLED_APPS = [
     'tasks',
     'projects',
     'calendar_events',
-    'reports'  # Add this
+    'reports',
+    'messaging',
+    'channels'
 ]
 
 MIDDLEWARE = [

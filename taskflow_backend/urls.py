@@ -9,4 +9,5 @@ urlpatterns = [
     path('api/v1/auth/', include('accounts.urls')),  # Add this line
     path('api/calendar/', include('calendar_events.api.urls')),
     path('roles/', include('roles.urls')),
+    path('api/v1/messaging/', include('messaging.urls')),
 ]
