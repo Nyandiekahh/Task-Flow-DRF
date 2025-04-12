@@ -168,7 +168,7 @@ class TaskViewSet(viewsets.ModelViewSet):
             self.permission_classes = [permissions.IsAuthenticated, CanApproveTasks]
         elif self.action == 'reject':
             self.permission_classes = [permissions.IsAuthenticated, CanRejectTasks]
-        elif self.action == 'add_comment':
+        elif self.action in ['add_comment', 'add_time']:
             self.permission_classes = [permissions.IsAuthenticated, CanComment]
         else:
             self.permission_classes = [permissions.IsAuthenticated, HasTaskPermission]
@@ -287,6 +287,45 @@ class TaskViewSet(viewsets.ModelViewSet):
         
         return Response(TaskAttachmentSerializer(attachment).data, status=status.HTTP_201_CREATED)
         
+    @action(detail=True, methods=['post'])
+    def add_time(self, request, pk=None):
+        """Add time spent to a task"""
+        task = self.get_object()
+        hours = request.data.get('hours')
+        description = request.data.get('description', '')
+        
+        if not hours:
+            return Response({'error': 'Hours is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            hours = float(hours)
+        except ValueError:
+            return Response({'error': 'Hours must be a number'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create comment with time info
+        comment_text = f"Time logged: {hours} hours. {description}"
+        
+        # Create comment
+        comment = Comment.objects.create(
+            task=task,
+            text=comment_text,
+            author=request.user
+        )
+        
+        # Create history entry
+        TaskHistory.objects.create(
+            task=task,
+            action='time_logged',  # Using a dedicated action type for time logging
+            actor=request.user,
+            description=f"Time entry added: {hours} hours"
+        )
+        
+        return Response({
+            'success': True, 
+            'hours': hours,
+            'comment': CommentSerializer(comment).data
+        }, status=status.HTTP_201_CREATED)
+    
     @action(detail=True, methods=['post'])
     def delegate(self, request, pk=None):
         """Delegate a task to another team member"""

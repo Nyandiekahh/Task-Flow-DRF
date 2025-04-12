@@ -233,6 +233,7 @@ class InvitationCreateView(APIView):
 class InvitationAcceptView(APIView):
     """View for accepting an invitation"""
     permission_classes = (permissions.AllowAny,)
+    authentication_classes = []
     
     def get(self, request, token):
         """Check if invitation is valid"""
@@ -473,6 +474,7 @@ class InvitationDeleteView(APIView):
 class VerifyOTPView(APIView):
     """View for verifying OTP codes"""
     permission_classes = (permissions.AllowAny,)
+    authentication_classes = []
     
     def post(self, request):
         """Verify OTP code"""
